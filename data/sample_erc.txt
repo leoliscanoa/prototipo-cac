@@ -1,0 +1,16 @@
+documento	nombres	apellidos	edad	creatinina	tasa_filtracion_glomerular	hemoglobina_glucosilada	presion_arterial_sistolica	presion_arterial_diastolica	albuminuria	diabetes	hipertension
+1001234567	Maria	Garcia Lopez	58	1.2	75.5	6.8	130	82	25.0	Sí	Sí
+1001234568	Juan	Martinez Rios	67	2.8	38.2	8.1	155	95	320.5	Sí	Sí
+1001234569	Ana	Rodriguez P	45	0.9	95.0	5.4	120	75	12.0	No	No
+1001234570	Carlos	Gomez Herrera	72	4.5	22.1	9.3	170	100	450.0	Sí	Sí
+1001234571	Luz	Perez Ortega	55	1.5	62.0	7.2	140	88	85.0	Sí	Sí
+1001234572	Pedro	Lopez Ayala	63	16.5	8.0	7.8	160	98	500.0	Sí	Sí
+1001234573	Sandra	Torres M	49	1.1	88.0	0	125	78	18.0	Sí	No
+1001234574	Miguel	Castro Diaz	71	3.2	30.5	8.5	145	90	280.0	Sí	Sí
+1001234575	Rosa	Mendez Vargas	60	1.8	55.0	6.5	135	85	45.0	No	Sí
+1001234576	Diego	Ruiz Parra	53	0.8	110.0	5.2	118	72	10.0	No	No
+1001234577	Carmen	Silva Rojas	68	5.1	18.5	10.2	175	105	600.0	Sí	Sí
+1001234578	Luis	Morales F	44	1.0	92.0	5.8	122	76	15.0	No	Sí
+1001234579	Patricia	Herrera Uribe	76	6.8	12.0	7.9	165	97	520.0	Sí	Sí
+1001234580	Jorge	Vargas Montoya	59	1.4	68.0	7.0	138	86	55.0	Sí	Sí
+1001234581	Laura	Diaz Rios	62	2.1	48.0	8.8	150	92	180.0	Sí	Sí
