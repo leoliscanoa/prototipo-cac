@@ -77,6 +77,8 @@ def renderizar_modulo_vih(df: pd.DataFrame = None):
     if df is None or df.empty:
         st.info("Usando datos de demostracion.")
         df = generar_datos_demo_vih()
+    else:
+        st.success(f"Mostrando {len(df)} registros cargados.")
 
     # Clasificar falla
     if "carga_viral" in df.columns and "meses_en_tar" in df.columns:

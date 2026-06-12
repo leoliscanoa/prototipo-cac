@@ -80,6 +80,8 @@ def renderizar_modulo_erc(df: pd.DataFrame = None):
     if df is None or df.empty:
         st.info("Usando datos de demostracion. Cargue datos reales desde el modulo de ingesta.")
         df = generar_datos_demo_erc()
+    else:
+        st.success(f"Mostrando {len(df)} registros cargados.")
 
     if "tasa_filtracion_glomerular" in df.columns:
         df["estadio_kdigo"] = df["tasa_filtracion_glomerular"].apply(clasificar_estadio_kdigo)

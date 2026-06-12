@@ -55,6 +55,8 @@ def renderizar_modulo_cancer(df: pd.DataFrame = None):
     if df is None or df.empty:
         st.info("Usando datos de demostracion. Cargue datos reales desde el modulo de ingesta.")
         df = generar_datos_demo_cancer()
+    else:
+        st.success(f"Mostrando {len(df)} registros cargados.")
 
     # KPIs
     col1, col2, col3, col4 = st.columns(4)

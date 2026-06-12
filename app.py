@@ -140,7 +140,6 @@ with st.sidebar:
             options=[
                 "Tablero operativo",
                 "Ingesta de datos",
-                "Validacion y calidad",
                 "Cancer",
                 "ERC / HTA / DM",
                 "Artritis reumatoide",
@@ -189,7 +188,8 @@ if portal == "Portal IPS (Prestador)":
 
     elif menu == "Ingesta de datos":
         st.title("Ingesta de datos")
-        st.markdown("Cargue datos de pacientes en formato CSV o TXT delimitado por tabulaciones.")
+        st.markdown("Cargue datos de pacientes en formato CSV o TXT delimitado por tabulaciones. "
+                    "La validacion de calidad se ejecuta automaticamente al cargar.")
 
         tab_masiva, tab_individual = st.tabs(["Carga masiva", "Registro individual"])
 
@@ -198,7 +198,12 @@ if portal == "Portal IPS (Prestador)":
             if df_cargado is not None:
                 df_cargado = normalizar_columnas(df_cargado)
                 st.session_state.datos_cargados = df_cargado
-                st.success("Datos almacenados en memoria. Proceda a validacion.")
+
+                # --- VALIDACION AUTOMATICA ---
+                campos_obligatorios = ["documento"] if "documento" in df_cargado.columns else []
+                df_valido, resultado = validar_dataframe(df_cargado, campos_requeridos=campos_obligatorios)
+                st.session_state.datos_validados = df_valido
+                st.session_state.resultado_validacion = resultado
 
         with tab_individual:
             patologia_sel = st.selectbox("Patologia", PATOLOGIAS, key="pat_ingesta")
@@ -211,99 +216,104 @@ if portal == "Portal IPS (Prestador)":
                     )
                 else:
                     st.session_state.datos_cargados = df_individual
-                st.success("Registro individual guardado.")
 
-    elif menu == "Validacion y calidad":
-        st.title("Motor de depuracion y validacion")
-        st.markdown(
-            "Evalua los datos antes de procesarlos. **Bloquea valores biologicamente imposibles** "
-            "y genera alertas para valores atipicos."
-        )
+                campos_obligatorios = ["documento"] if "documento" in st.session_state.datos_cargados.columns else []
+                df_valido, resultado = validar_dataframe(st.session_state.datos_cargados, campos_requeridos=campos_obligatorios)
+                st.session_state.datos_validados = df_valido
+                st.session_state.resultado_validacion = resultado
+                st.success("Registro guardado y validado automaticamente.")
 
-        if st.session_state.datos_cargados is None:
-            st.warning("No hay datos cargados. Primero vaya al modulo de ingesta.")
-        else:
-            st.write(f"**Registros a validar:** {len(st.session_state.datos_cargados)}")
+        # --- RESULTADO DE CARGA (en la misma pantalla) ---
+        if st.session_state.resultado_validacion is not None:
+            st.divider()
+            st.subheader("Resultado de carga y validacion")
 
-            campos_obligatorios = st.multiselect(
-                "Campos obligatorios para validar:",
-                options=st.session_state.datos_cargados.columns.tolist(),
-                default=["documento"] if "documento" in st.session_state.datos_cargados.columns else []
-            )
+            resultado = st.session_state.resultado_validacion
+            resumen = resultado.resumen
 
-            if st.button("Ejecutar validacion", type="primary"):
-                with st.spinner("Validando datos..."):
-                    df_valido, resultado = validar_dataframe(
-                        st.session_state.datos_cargados,
-                        campos_requeridos=campos_obligatorios
-                    )
-                    st.session_state.datos_validados = df_valido
-                    st.session_state.resultado_validacion = resultado
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                total = resumen["registros_validos"] + resumen["registros_bloqueados"]
+                st.metric("Total procesados", total)
+            with col2:
+                st.metric("Validos", resumen["registros_validos"])
+            with col3:
+                st.metric("Bloqueados", resumen["registros_bloqueados"])
+            with col4:
+                st.metric("Con alertas", resumen["registros_con_alerta"])
 
-                st.divider()
-                resumen = resultado.resumen
+            if resumen["aprobado"]:
+                st.success("Todos los registros pasaron la validacion sin errores criticos.")
+            else:
+                st.error(f"{resumen['registros_bloqueados']} registros bloqueados por valores imposibles.")
 
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Total evaluados", len(st.session_state.datos_cargados))
-                with col2:
-                    st.metric("Validos", resumen["registros_validos"])
-                with col3:
-                    st.metric("Bloqueados", resumen["registros_bloqueados"])
-                with col4:
-                    st.metric("Con alertas", resumen["registros_con_alerta"])
+            # Reporte de hallazgos
+            reporte_df = generar_reporte_validacion(resultado)
+            if not reporte_df.empty:
+                st.write("**Hallazgos detectados:**")
+                st.dataframe(reporte_df, use_container_width=True, hide_index=True)
 
-                if resumen["aprobado"]:
-                    st.success("Validacion aprobada. Todos los registros son validos.")
-                else:
-                    st.error(f"Se bloquearon {resumen['registros_bloqueados']} registros con errores criticos.")
+                reporte_txt = reporte_df.to_csv(sep='\t', index=False, encoding='utf-8')
+                st.download_button(
+                    label="Descargar reporte de validacion (.txt)",
+                    data=reporte_txt,
+                    file_name=f"reporte_validacion_{datetime.now().strftime('%Y%m%d')}.txt",
+                    mime="text/plain"
+                )
 
-                reporte_df = generar_reporte_validacion(resultado)
-                if not reporte_df.empty:
-                    st.subheader("Detalle de hallazgos")
-                    st.dataframe(reporte_df, use_container_width=True, hide_index=True)
+            # Datos validados con descarga
+            st.divider()
+            st.write("**Datos validados (listos para analisis):**")
+            df_valido = st.session_state.datos_validados
+            if df_valido is not None and not df_valido.empty:
+                st.dataframe(df_valido, use_container_width=True, hide_index=True)
 
-                st.subheader("Datos validados")
-                st.dataframe(df_valido.head(20), use_container_width=True, hide_index=True)
+                datos_txt = df_valido.to_csv(sep='\t', index=False, encoding='utf-8')
+                st.download_button(
+                    label="Descargar datos validados (.txt)",
+                    data=datos_txt,
+                    file_name=f"datos_validados_{datetime.now().strftime('%Y%m%d')}.txt",
+                    mime="text/plain"
+                )
 
     # --- Modulos clinicos ---
     elif menu == "Cancer":
-        datos = st.session_state.datos_validados
+        datos = st.session_state.datos_validados if st.session_state.datos_validados is not None else st.session_state.datos_cargados
         if datos is not None and not datos.empty and {"tipo_cancer", "estadio", "fecha_diagnostico"}.intersection(set(datos.columns)):
             renderizar_modulo_cancer(datos)
         else:
             renderizar_modulo_cancer(None)
 
     elif menu == "ERC / HTA / DM":
-        datos = st.session_state.datos_validados
+        datos = st.session_state.datos_validados if st.session_state.datos_validados is not None else st.session_state.datos_cargados
         if datos is not None and not datos.empty and {"creatinina", "tasa_filtracion_glomerular", "albuminuria"}.intersection(set(datos.columns)):
             renderizar_modulo_erc(datos)
         else:
             renderizar_modulo_erc(None)
 
     elif menu == "Artritis reumatoide":
-        datos = st.session_state.datos_validados
+        datos = st.session_state.datos_validados if st.session_state.datos_validados is not None else st.session_state.datos_cargados
         if datos is not None and not datos.empty and {"medicamento_dmard", "actividad_enfermedad", "terapia_biologica"}.intersection(set(datos.columns)):
             renderizar_modulo_artritis(datos)
         else:
             renderizar_modulo_artritis(None)
 
     elif menu == "VIH / SIDA":
-        datos = st.session_state.datos_validados
+        datos = st.session_state.datos_validados if st.session_state.datos_validados is not None else st.session_state.datos_cargados
         if datos is not None and not datos.empty and {"cd4", "carga_viral", "esquema_tar"}.intersection(set(datos.columns)):
             renderizar_modulo_vih(datos)
         else:
             renderizar_modulo_vih(None)
 
     elif menu == "Hepatitis C":
-        datos = st.session_state.datos_validados
+        datos = st.session_state.datos_validados if st.session_state.datos_validados is not None else st.session_state.datos_cargados
         if datos is not None and not datos.empty and {"genotipo", "medicamento_antiviral", "respuesta_virologica"}.intersection(set(datos.columns)):
             renderizar_modulo_hepatitis_c(datos)
         else:
             renderizar_modulo_hepatitis_c(None)
 
     elif menu == "Hemofilia":
-        datos = st.session_state.datos_validados
+        datos = st.session_state.datos_validados if st.session_state.datos_validados is not None else st.session_state.datos_cargados
         if datos is not None and not datos.empty and {"tipo_hemofilia", "factor_coagulacion_consumo_ui", "episodios_hemorragicos"}.intersection(set(datos.columns)):
             renderizar_modulo_hemofilia(datos)
         else:
@@ -314,6 +324,8 @@ if portal == "Portal IPS (Prestador)":
 # CONTENIDO - PORTAL EPS
 # ============================================================
 else:
+    # Datos disponibles del prestador
+    datos_eps = st.session_state.datos_validados if st.session_state.datos_validados is not None else st.session_state.datos_cargados
 
     if menu == "Dashboard estrategico":
         st.title("Dashboard estrategico - Gestion del riesgo poblacional")
@@ -322,15 +334,34 @@ else:
             "Ciclo RIAS: identificar, estratificar, intervenir, monitorear."
         )
 
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Pacientes en cohorte", "1,245")
-        with col2:
-            st.metric("Riesgo muy alto", "89")
-        with col3:
-            st.metric("Intervenciones mes", "342")
-        with col4:
-            st.metric("AUC modelo activo", "0.847")
+        # KPIs dinamicos basados en datos reales
+        if datos_eps is not None and not datos_eps.empty:
+            from modules.riesgo_dinamico import recalcular_riesgo_cohorte
+            df_dashboard = recalcular_riesgo_cohorte(datos_eps.copy())
+
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Pacientes en cohorte", len(df_dashboard))
+            with col2:
+                muy_alto = len(df_dashboard[df_dashboard["nivel_riesgo"] == "Muy Alto"])
+                st.metric("Riesgo muy alto", muy_alto)
+            with col3:
+                alto = len(df_dashboard[df_dashboard["nivel_riesgo"] == "Alto"])
+                st.metric("Riesgo alto", alto)
+            with col4:
+                bajo = len(df_dashboard[df_dashboard["nivel_riesgo"] == "Bajo"])
+                st.metric("Riesgo bajo", bajo)
+        else:
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Pacientes en cohorte", 0)
+            with col2:
+                st.metric("Riesgo muy alto", 0)
+            with col3:
+                st.metric("Riesgo alto", 0)
+            with col4:
+                st.metric("Riesgo bajo", 0)
+            st.info("Sin datos del prestador. Cargue datos desde el portal IPS para alimentar este dashboard.")
 
         st.divider()
 
@@ -352,23 +383,11 @@ else:
         with col_d:
             st.info("**Desempeno IA:** Metricas TRIPOD+AI, explicabilidad SHAP")
 
-        st.subheader("Cohortes disponibles")
-        patologias_info = {
-            "Cancer": "Seguimiento, oportunidad diagnostica, trazabilidad de tratamientos",
-            "ERC / HTA / DM": "Estratificacion KDIGO, alertas de progresion renal",
-            "Artritis reumatoide": "Seguimiento farmacologico DMARD, adherencia",
-            "VIH / SIDA": "Auditoria TAR, transmision materno-infantil, coinfecciones",
-            "Hepatitis C": "Farmacoterapia AAD, integracion SIVIGILA",
-            "Hemofilia": "Consumo de factores, episodios hemorragicos",
-        }
-        for nombre, desc in patologias_info.items():
-            st.write(f"- **{nombre}:** {desc}")
-
     elif menu == "Gestion de cohortes":
-        renderizar_gestion_cohortes()
+        renderizar_gestion_cohortes(datos_eps)
 
     elif menu == "Intervencion clinica (CRM)":
-        renderizar_crm_clinico()
+        renderizar_crm_clinico(datos_eps)
 
     elif menu == "Desempeno del modelo (IA)":
         renderizar_tablero_modelo()
@@ -384,4 +403,4 @@ else:
             PATOLOGIAS,
             key="pat_export"
         )
-        renderizar_exportacion(st.session_state.datos_validados, patologia_export)
+        renderizar_exportacion(datos_eps, patologia_export)

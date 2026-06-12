@@ -6,6 +6,8 @@ Permite a los gestores de la EPS:
 - Registrar intervenciones (llamadas, SMS, correos, educacion)
 - Programar acciones segun riesgo (rutinarias vs urgentes)
 - Consultar trazabilidad cronologica de acciones por paciente
+
+Usa datos reales del prestador cuando estan disponibles.
 """
 
 import pandas as pd
@@ -13,18 +15,18 @@ import streamlit as st
 from datetime import datetime, timedelta
 import numpy as np
 
+from modules.riesgo_dinamico import recalcular_riesgo_cohorte
+
 
 def generar_log_intervenciones_demo() -> pd.DataFrame:
     """Genera datos demo del log de intervenciones."""
     np.random.seed(88)
     n = 30
-
     tipos_accion = ["Llamada telefonica", "Envio SMS", "Correo electronico",
                     "Educacion en salud", "Cita prioritaria", "Visita domiciliaria"]
     gestores = ["Ana Ruiz", "Carlos Pena", "Maria Lopez", "Pedro Diaz"]
     resultados = ["Contacto exitoso", "No contesta", "Mensaje dejado",
                   "Cita agendada", "Paciente informado"]
-
     datos = {
         "documento": [f"{10000000 + np.random.randint(0, 50)}" for _ in range(n)],
         "fecha_accion": [
@@ -39,13 +41,66 @@ def generar_log_intervenciones_demo() -> pd.DataFrame:
     return pd.DataFrame(datos).sort_values("fecha_accion", ascending=False)
 
 
-def renderizar_crm_clinico():
-    """Renderiza el modulo CRM clinico para gestores EPS."""
+def generar_alertas_desde_datos(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Genera alertas reales basadas en los datos del prestador.
+    Identifica pacientes de alto riesgo o con valores criticos.
+    """
+    alertas = []
+
+    if "nivel_riesgo" not in df.columns:
+        df = recalcular_riesgo_cohorte(df)
+
+    # Pacientes de riesgo Alto/Muy Alto
+    alto_riesgo = df[df["nivel_riesgo"].isin(["Alto", "Muy Alto"])]
+    for _, row in alto_riesgo.iterrows():
+        doc = row.get("documento", row.get("num_id", "N/A"))
+        nombre = row.get("nombres", f"Pac. {doc}")
+        nivel = row["nivel_riesgo"]
+        factores = row.get("factores_riesgo", "")
+
+        if nivel == "Muy Alto":
+            accion = "Cita prioritaria + intervencion multidisciplinaria"
+            alerta_msg = f"Riesgo {nivel}: {factores}" if factores else f"Riesgo {nivel}"
+        else:
+            accion = "Cita prioritaria con especialista"
+            alerta_msg = f"Riesgo {nivel}: {factores}" if factores else f"Riesgo {nivel}"
+
+        alertas.append({
+            "documento": str(doc),
+            "nombres": nombre,
+            "nivel_riesgo": nivel,
+            "score": row.get("score_riesgo", 0),
+            "alerta": alerta_msg,
+            "accion_prescrita": accion,
+        })
+
+    if not alertas:
+        return pd.DataFrame(columns=["documento", "nombres", "nivel_riesgo", "score", "alerta", "accion_prescrita"])
+
+    return pd.DataFrame(alertas).sort_values("score", ascending=False).head(20)
+
+
+def renderizar_crm_clinico(df_prestador: pd.DataFrame = None):
+    """
+    Renderiza el modulo CRM clinico para gestores EPS.
+    Usa datos del prestador si estan disponibles.
+    """
     st.header("Intervencion clinica - CRM de salud")
 
     # Inicializar log en session state
     if "log_intervenciones" not in st.session_state:
         st.session_state.log_intervenciones = generar_log_intervenciones_demo()
+
+    # Preparar datos con riesgo
+    if df_prestador is not None and not df_prestador.empty:
+        df_riesgo = df_prestador.copy()
+        if "score_riesgo" not in df_riesgo.columns:
+            df_riesgo = recalcular_riesgo_cohorte(df_riesgo)
+        usando_demo = False
+    else:
+        df_riesgo = None
+        usando_demo = True
 
     tab1, tab2, tab3 = st.tabs([
         "Alertas y prescripcion", "Registrar intervencion", "Trazabilidad (log)"
@@ -54,36 +109,22 @@ def renderizar_crm_clinico():
     with tab1:
         st.subheader("Alertas activas por nivel de riesgo")
 
-        # Simulacion de alertas
-        alertas = pd.DataFrame({
-            "documento": ["10000003", "10000012", "10000027", "10000041", "10000008"],
-            "nombres": ["Paciente_3", "Paciente_12", "Paciente_27", "Paciente_41", "Paciente_8"],
-            "nivel_riesgo": ["Muy Alto", "Muy Alto", "Alto", "Alto", "Medio"],
-            "adherencia": [45, 55, 62, 70, 78],
-            "alerta": [
-                "No asiste a control hace 90 dias",
-                "HbA1c en deterioro progresivo",
-                "Carga viral detectable 2 periodos",
-                "Creatinina en aumento sostenido",
-                "Pendiente laboratorio de control"
-            ],
-            "accion_prescrita": [
-                "Cita prioritaria + visita domiciliaria",
-                "Intervencion multidisciplinaria",
-                "Cita prioritaria con infectologia",
-                "Cita prioritaria nefrologia",
-                "Recordatorio telefonico de laboratorio"
-            ]
-        })
-
-        # Codigo de colores por riesgo
         st.markdown("""
         **Reglas de prescripcion automatica:**
-        - Riesgo Alto/Muy Alto + No adherente: Cita prioritaria, intervencion multidisciplinaria
-        - Riesgo Bajo/Adherente: Control rutinario programado
+        - Riesgo Alto/Muy Alto: Cita prioritaria, intervencion multidisciplinaria
+        - Riesgo Medio: Seguimiento programado
+        - Riesgo Bajo: Control rutinario
         """)
 
-        st.dataframe(alertas, use_container_width=True, hide_index=True)
+        if df_riesgo is not None:
+            alertas = generar_alertas_desde_datos(df_riesgo)
+            if not alertas.empty:
+                st.write(f"**{len(alertas)} pacientes con alertas activas:**")
+                st.dataframe(alertas, use_container_width=True, hide_index=True)
+            else:
+                st.success("Sin alertas activas. Todos los pacientes en rango aceptable.")
+        else:
+            st.info("Sin datos del prestador. Cargue datos desde el portal IPS para ver alertas reales.")
 
     with tab2:
         st.subheader("Registrar nueva intervencion")
@@ -126,7 +167,6 @@ def renderizar_crm_clinico():
     with tab3:
         st.subheader("Trazabilidad cronologica")
 
-        # Filtro por documento
         filtro_doc = st.text_input("Filtrar por documento (dejar vacio para ver todos):", key="filtro_log")
 
         log = st.session_state.log_intervenciones
