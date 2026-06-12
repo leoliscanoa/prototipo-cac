@@ -96,6 +96,7 @@ from modules.clinicos.artritis import renderizar_modulo_artritis
 from modules.clinicos.vih import renderizar_modulo_vih
 from modules.clinicos.hepatitis_c import renderizar_modulo_hepatitis_c
 from modules.clinicos.hemofilia import renderizar_modulo_hemofilia
+from modules.evolucion_longitudinal import renderizar_evolucion_longitudinal
 from config import PATOLOGIAS, CODIGO_EPS, NOMBRE_EPS
 
 
@@ -110,6 +111,8 @@ if "resultado_validacion" not in st.session_state:
     st.session_state.resultado_validacion = None
 if "portal_activo" not in st.session_state:
     st.session_state.portal_activo = "IPS"
+if "historico_periodos" not in st.session_state:
+    st.session_state.historico_periodos = {}
 
 
 # ============================================================
@@ -155,6 +158,7 @@ with st.sidebar:
             options=[
                 "Dashboard estrategico",
                 "Gestion de cohortes",
+                "Evolucion longitudinal",
                 "Intervencion clinica (CRM)",
                 "Desempeno del modelo (IA)",
                 "Exportacion CAC",
@@ -173,6 +177,9 @@ with st.sidebar:
 
     if st.session_state.datos_validados is not None:
         st.success(f"Validados: {len(st.session_state.datos_validados)} reg.")
+
+    if st.session_state.historico_periodos:
+        st.success(f"Historico: {len(st.session_state.historico_periodos)} periodos")
 
     st.divider()
     st.caption(f"v2.0.0 | {datetime.now().strftime('%Y-%m-%d')}")
@@ -204,6 +211,15 @@ if portal == "Portal IPS (Prestador)":
                 df_valido, resultado = validar_dataframe(df_cargado, campos_requeridos=campos_obligatorios)
                 st.session_state.datos_validados = df_valido
                 st.session_state.resultado_validacion = resultado
+
+                # --- GUARDAR AUTOMATICAMENTE EN HISTORICO PARA EPS ---
+                periodo_nombre = f"Periodo {len(st.session_state.historico_periodos) + 1}"
+                st.session_state.historico_periodos[periodo_nombre] = df_valido.copy()
+                st.success(
+                    f"Datos cargados y validados. Guardado como '{periodo_nombre}' "
+                    f"en historico ({len(df_valido)} registros). "
+                    f"Total periodos acumulados: {len(st.session_state.historico_periodos)}"
+                )
 
         with tab_individual:
             patologia_sel = st.selectbox("Patologia", PATOLOGIAS, key="pat_ingesta")
@@ -386,8 +402,11 @@ else:
     elif menu == "Gestion de cohortes":
         renderizar_gestion_cohortes(datos_eps)
 
+    elif menu == "Evolucion longitudinal":
+        renderizar_evolucion_longitudinal(st.session_state.historico_periodos)
+
     elif menu == "Intervencion clinica (CRM)":
-        renderizar_crm_clinico(datos_eps)
+        renderizar_crm_clinico(datos_eps, historico=st.session_state.historico_periodos)
 
     elif menu == "Desempeno del modelo (IA)":
         renderizar_tablero_modelo()

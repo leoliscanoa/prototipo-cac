@@ -41,50 +41,87 @@ def generar_log_intervenciones_demo() -> pd.DataFrame:
     return pd.DataFrame(datos).sort_values("fecha_accion", ascending=False)
 
 
-def generar_alertas_desde_datos(df: pd.DataFrame) -> pd.DataFrame:
+def generar_alertas_desde_datos(df: pd.DataFrame, historico: dict = None) -> pd.DataFrame:
     """
     Genera alertas reales basadas en los datos del prestador.
-    Identifica pacientes de alto riesgo o con valores criticos.
+    Incluye indicador de tendencia si hay datos historicos.
     """
     alertas = []
 
     if "nivel_riesgo" not in df.columns:
         df = recalcular_riesgo_cohorte(df)
 
+    # Calcular tendencia si hay historico
+    tendencias = {}
+    if historico and len(historico) >= 2:
+        from modules.riesgo_dinamico import calcular_riesgo_historico, calcular_tendencia_paciente
+        periodos = sorted(historico.keys())
+        col_doc = "documento" if "documento" in df.columns else "num_id"
+
+        # Calcular scores para periodos anteriores
+        for doc in df[col_doc].unique():
+            scores_pac = []
+            for periodo in periodos:
+                df_p = historico[periodo]
+                col_doc_p = "documento" if "documento" in df_p.columns else "num_id"
+                if col_doc_p in df_p.columns:
+                    pac_p = df_p[df_p[col_doc_p] == doc]
+                    if not pac_p.empty:
+                        from modules.riesgo_dinamico import calcular_score_riesgo
+                        score, _, _ = calcular_score_riesgo(pac_p.iloc[0].to_dict())
+                        scores_pac.append(score)
+            if scores_pac:
+                tendencias[doc] = calcular_tendencia_paciente(scores_pac)
+
     # Pacientes de riesgo Alto/Muy Alto
     alto_riesgo = df[df["nivel_riesgo"].isin(["Alto", "Muy Alto"])]
+    col_doc = "documento" if "documento" in df.columns else "num_id"
+
     for _, row in alto_riesgo.iterrows():
-        doc = row.get("documento", row.get("num_id", "N/A"))
+        doc = str(row.get(col_doc, "N/A"))
         nombre = row.get("nombres", f"Pac. {doc}")
         nivel = row["nivel_riesgo"]
         factores = row.get("factores_riesgo", "")
+        score = row.get("score_riesgo", 0)
+
+        # Tendencia
+        tendencia = tendencias.get(doc, "SIN HISTORICO")
+        if tendencia == "AUMENTO":
+            indicador = "^ AUMENTO"
+        elif tendencia == "DISMINUYO":
+            indicador = "v DISMINUYO"
+        elif tendencia == "ESTABLE":
+            indicador = "= ESTABLE"
+        else:
+            indicador = "- Sin historico"
 
         if nivel == "Muy Alto":
             accion = "Cita prioritaria + intervencion multidisciplinaria"
-            alerta_msg = f"Riesgo {nivel}: {factores}" if factores else f"Riesgo {nivel}"
         else:
             accion = "Cita prioritaria con especialista"
-            alerta_msg = f"Riesgo {nivel}: {factores}" if factores else f"Riesgo {nivel}"
 
         alertas.append({
-            "documento": str(doc),
+            "documento": doc,
             "nombres": nombre,
             "nivel_riesgo": nivel,
-            "score": row.get("score_riesgo", 0),
-            "alerta": alerta_msg,
+            "score": score,
+            "tendencia": indicador,
+            "alerta": f"Riesgo {nivel}: {factores}" if factores else f"Riesgo {nivel}",
             "accion_prescrita": accion,
         })
 
     if not alertas:
-        return pd.DataFrame(columns=["documento", "nombres", "nivel_riesgo", "score", "alerta", "accion_prescrita"])
+        return pd.DataFrame(columns=["documento", "nombres", "nivel_riesgo", "score",
+                                     "tendencia", "alerta", "accion_prescrita"])
 
     return pd.DataFrame(alertas).sort_values("score", ascending=False).head(20)
 
 
-def renderizar_crm_clinico(df_prestador: pd.DataFrame = None):
+def renderizar_crm_clinico(df_prestador: pd.DataFrame = None, historico: dict = None):
     """
     Renderiza el modulo CRM clinico para gestores EPS.
     Usa datos del prestador si estan disponibles.
+    El historico permite mostrar tendencias de riesgo.
     """
     st.header("Intervencion clinica - CRM de salud")
 
@@ -117,7 +154,7 @@ def renderizar_crm_clinico(df_prestador: pd.DataFrame = None):
         """)
 
         if df_riesgo is not None:
-            alertas = generar_alertas_desde_datos(df_riesgo)
+            alertas = generar_alertas_desde_datos(df_riesgo, historico=historico)
             if not alertas.empty:
                 st.write(f"**{len(alertas)} pacientes con alertas activas:**")
                 st.dataframe(alertas, use_container_width=True, hide_index=True)

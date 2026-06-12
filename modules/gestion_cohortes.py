@@ -156,17 +156,34 @@ def renderizar_gestion_cohortes(df_prestador: pd.DataFrame = None):
     with tab3:
         st.subheader("Pacientes candidatos a egreso")
         st.write(
-            "Pacientes con riesgo Bajo sostenido que pueden ser egresados de la cohorte."
+            "Pacientes con riesgo Bajo sostenido o condiciones que justifican "
+            "su salida de la cohorte de gestion."
         )
 
         egresos = df_base[df_base["nivel_riesgo"] == "Bajo"].copy()
+
+        # Motivos de egreso obligatorios segun normativa
+        motivos_egreso = [
+            "Mejoria clinica sostenida",
+            "Metas terapeuticas alcanzadas",
+            "Fallecimiento",
+            "Retiro del asegurado de la EPS",
+        ]
+
         if not egresos.empty:
+            # Asignar motivos (en produccion vendria de datos reales)
+            np.random.seed(42)
             egresos["motivo_egreso"] = np.random.choice(
-                ["Mejoria clinica sostenida", "Metas terapeuticas alcanzadas",
-                 "Bajo riesgo sostenido"],
-                len(egresos)
+                motivos_egreso, len(egresos), p=[0.40, 0.30, 0.10, 0.20]
             )
             st.write(f"**{len(egresos)} pacientes candidatos a egreso**")
+
+            # Resumen por motivo
+            resumen_motivo = egresos["motivo_egreso"].value_counts().reset_index()
+            resumen_motivo.columns = ["Motivo de egreso", "Pacientes"]
+            st.dataframe(resumen_motivo, use_container_width=True, hide_index=True)
+
+            # Tabla detallada
             cols_egreso = [c for c in ["documento", "nombres", "score_riesgo",
                            "nivel_riesgo", "motivo_egreso"] if c in egresos.columns]
             st.dataframe(egresos[cols_egreso], use_container_width=True, hide_index=True)

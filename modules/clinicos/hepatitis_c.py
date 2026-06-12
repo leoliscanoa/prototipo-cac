@@ -114,18 +114,20 @@ def renderizar_modulo_hepatitis_c(df: pd.DataFrame = None):
     with tab1:
         st.subheader("Seguimiento farmacoterapeutico")
         if "medicamento_antiviral" in df.columns:
+            color_col = "fase_tratamiento" if "fase_tratamiento" in df.columns else None
             fig = px.histogram(
-                df, x="medicamento_antiviral", color="fase_tratamiento",
+                df, x="medicamento_antiviral", color=color_col,
                 title="Antivirales de accion directa en uso",
                 barmode="group"
             )
             st.plotly_chart(fig, use_container_width=True)
 
-            fig2 = px.box(
-                df, x="medicamento_antiviral", y="semanas_tratamiento",
-                title="Semanas de tratamiento por AAD"
-            )
-            st.plotly_chart(fig2, use_container_width=True)
+            if "semanas_tratamiento" in df.columns:
+                fig2 = px.box(
+                    df, x="medicamento_antiviral", y="semanas_tratamiento",
+                    title="Semanas de tratamiento por AAD"
+                )
+                st.plotly_chart(fig2, use_container_width=True)
 
     with tab2:
         col_a, col_b = st.columns(2)
